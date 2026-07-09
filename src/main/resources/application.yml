@@ -1,0 +1,50 @@
+server:
+  port: 9900
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+file:
+  upload:
+    path: ./papers
+    allowed-extensions: pdf,txt,md
+
+milvus:
+  host: localhost
+  port: 19530
+  username: ""
+  password: ""
+  database: default
+  timeout: 10000
+
+spring:
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:your-api-key-here}
+      chat:
+        options:
+          timeout: 180000
+      retry:
+        max-attempts: 3
+        backoff:
+          initial-interval: 2000
+          multiplier: 2
+          max-interval: 10000
+
+dashscope:
+  api:
+    key: ${DASHSCOPE_API_KEY:your-api-key-here}
+  embedding:
+    model: text-embedding-v4
+
+document:
+  chunk:
+    max-size: 1200
+    overlap: 200
+
+rag:
+  top-k: 5
+  model: "qwen3-max"
+  reranker-enabled: true
