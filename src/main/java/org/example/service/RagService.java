@@ -8,6 +8,7 @@ import com.alibaba.dashscope.common.Role;
 import com.alibaba.dashscope.utils.Constants;
 import io.reactivex.Flowable;
 import jakarta.annotation.PostConstruct;
+import org.example.client.LightRagClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ public class RagService {
 
     @Autowired private VectorSearchService searchService;
     @Autowired private RerankerService reranker;
+    @Autowired(required = false) private LightRagClient lightRagClient;
 
     @Value("${dashscope.api.key}")         private String apiKey;
     @Value("${rag.top-k:3}")               private int topK;
@@ -46,6 +48,13 @@ public class RagService {
     public String query(String question) { return query(question, List.of()); }
 
     public String query(String question, List<Map<String, String>> history) {
+        // 如果 LightRAG 启用，走图搜索
+        if (lightRagClient != null && lightRagClient.isEnabled()) {
+            var answer = lightRagClient.query(question);
+            if (!answer.isEmpty()) return answer;
+            log.warn("LightRAG 返回空结果，fallback 到 Milvus 检索");
+        }
+
         var results = retrieve(question);
         if (results.isEmpty()) return "抱歉，知识库中未找到相关信息。";
         var prompt = buildPrompt(question, buildContext(results));
@@ -57,6 +66,17 @@ public class RagService {
     public void queryStream(String question, StreamCallback cb) { queryStream(question, List.of(), cb); }
 
     public void queryStream(String question, List<Map<String, String>> history, StreamCallback cb) {
+        // 如果 LightRAG 启用了，走图搜索（注意：LightRAG query 不是流式的，一次返回完整回答）
+        if (lightRagClient != null && lightRagClient.isEnabled()) {
+            var answer = lightRagClient.query(question);
+            if (!answer.isEmpty()) {
+                cb.onContentChunk(answer);
+                cb.onComplete(answer, "");
+                return;
+            }
+            log.warn("LightRAG 返回空结果，fallback 到 Milvus 检索");
+        }
+
         var results = retrieve(question);
         cb.onSearchResults(results);
         if (results.isEmpty()) {

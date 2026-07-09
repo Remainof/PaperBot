@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.InsertReq;
 import io.milvus.v2.service.vector.request.DeleteReq;
+import org.example.client.LightRagClient;
 import org.example.constant.MilvusConstants;
 import org.example.dto.DocumentChunk;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ public class VectorIndexService {
     @Autowired private VectorEmbeddingService embeddingService;
     @Autowired private DocumentChunkService chunkService;
     @Autowired private PaperParseService paperParseService;
+    @Autowired(required = false) private LightRagClient lightRagClient;
 
     private final Gson gson = new Gson();
 
@@ -52,7 +54,21 @@ public class VectorIndexService {
             insert(text, dense, sparse, md, c.getChunkIndex());
             if ((i + 1) % 10 == 0 || i == chunks.size() - 1) log.info("✓ 分片 {}/{}", i + 1, chunks.size());
         }
+        // 同步到 LightRAG 建图（如果启用）
+        syncToLightRag(content, filePath);
+
         log.info("索引完成: {} ({} 分片)", filePath, chunks.size());
+    }
+
+    /** 将全文发送到 LightRAG 构建知识图谱 */
+    private void syncToLightRag(String content, String filePath) {
+        if (lightRagClient == null || !lightRagClient.isEnabled()) return;
+        try {
+            lightRagClient.insert(content, true);
+            log.info("已同步到 LightRAG: {}", filePath);
+        } catch (Exception e) {
+            log.warn("同步到 LightRAG 失败（不影响主流程）: {}", e.getMessage());
+        }
     }
 
     private void insert(String content, List<Float> dense, Map<Long, Float> sparse,

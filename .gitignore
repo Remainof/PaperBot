@@ -47,9 +47,26 @@ logs/
 ### Upload Files ###
 uploads/
 
-### Temp Scripts ###
-*.sh
-*.py
+### Python (explicit ignores, no global wildcard)
+lightrag_service/.venv/
+lightrag_service/data/*.json
+lightrag_service/data/*.pkl
+lightrag_service/data/*.bin
+
+### Shell scripts (only ignore standalone scripts)
+scripts/
+
+### Claude IDE
+.claude/settings.local.json
+.claude/worktrees/
+.claude/memory/
+
+### Markdown
+*.md
+
+### Environment
+.env
+.env.local
 
 ### docker
 /volumes

@@ -48,3 +48,10 @@ rag:
   top-k: 5
   model: "qwen3-max"
   reranker-enabled: true
+
+# ── LightRAG 集成配置 ─────────────────────────────────
+# lightrag.enabled=true 时，上传也会同步建图，问答走 LightRAG 图搜索
+lightrag:
+  enabled: false                        # 默认关闭，开启需先启动 lightrag_service
+  url: http://localhost:8021            # LightRAG HTTP 服务地址
+  mode: mix                             # 检索模式: local / global / hybrid / naive / mix
