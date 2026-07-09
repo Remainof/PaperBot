@@ -1,0 +1,7 @@
+# LightRAG 依赖
+# 注意: PyPI 版本过旧, 推荐从 GitHub 源码安装
+# pip install git+https://github.com/HKUDS/LightRAG.git
+fastapi>=0.104.0
+uvicorn>=0.24.0
+openai>=1.6.0
+dashscope>=1.18.0
