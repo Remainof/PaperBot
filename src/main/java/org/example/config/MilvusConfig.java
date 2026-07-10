@@ -49,6 +49,11 @@ public class MilvusConfig {
     }
 
     private void ensureCollection() {
+        ensurePapers();
+        ensurePapersV2();
+    }
+
+    private void ensurePapers() {
         var name = MilvusConstants.MILVUS_COLLECTION_NAME;
         if (client.hasCollection(HasCollectionReq.builder().collectionName(name).build())) {
             log.info("Collection 已存在: {}", name);
@@ -109,5 +114,78 @@ public class MilvusConfig {
         log.info("Sparse 索引创建完成: field={}, type=SPARSE_INVERTED_INDEX", MilvusConstants.SPARSE_FIELD);
 
         log.info("Collection 创建完成: {}", name);
+    }
+
+    /** 创建 papers_v2 Collection（含版本化字段） */
+    private void ensurePapersV2() {
+        var name = MilvusConstants.MILVUS_COLLECTION_NAME_V2;
+        if (client.hasCollection(HasCollectionReq.builder().collectionName(name).build())) {
+            log.info("Collection 已存在: {}", name);
+            return;
+        }
+
+        log.info("创建 collection: {}", name);
+
+        var idField = CreateCollectionReq.FieldSchema.builder()
+                .name("id").dataType(DataType.VarChar).maxLength(MilvusConstants.ID_MAX_LENGTH)
+                .isPrimaryKey(true).autoID(false).build();
+        var docIdField = CreateCollectionReq.FieldSchema.builder()
+                .name("document_id").dataType(DataType.VarChar).maxLength(128).build();
+        var indexVersionField = CreateCollectionReq.FieldSchema.builder()
+                .name("index_version").dataType(DataType.VarChar).maxLength(64).build();
+        var chunkIndexField = CreateCollectionReq.FieldSchema.builder()
+                .name("chunk_index").dataType(DataType.Int32).build();
+        var indexStatusField = CreateCollectionReq.FieldSchema.builder()
+                .name("index_status").dataType(DataType.VarChar).maxLength(16).build();
+        var denseField = CreateCollectionReq.FieldSchema.builder()
+                .name(MilvusConstants.DENSE_FIELD).dataType(DataType.FloatVector)
+                .dimension(MilvusConstants.VECTOR_DIM).build();
+        var sparseField = CreateCollectionReq.FieldSchema.builder()
+                .name(MilvusConstants.SPARSE_FIELD).dataType(DataType.SparseFloatVector).build();
+        var contentField = CreateCollectionReq.FieldSchema.builder()
+                .name("content").dataType(DataType.VarChar).maxLength(MilvusConstants.CONTENT_MAX_LENGTH).build();
+        var metaField = CreateCollectionReq.FieldSchema.builder()
+                .name("metadata").dataType(DataType.JSON).build();
+
+        var schema = CreateCollectionReq.CollectionSchema.builder()
+                .enableDynamicField(false)
+                .fieldSchemaList(List.of(idField, docIdField, indexVersionField, chunkIndexField,
+                        indexStatusField, denseField, sparseField, contentField, metaField))
+                .build();
+
+        client.createCollection(CreateCollectionReq.builder()
+                .collectionName(name)
+                .description("论文知识库 v2（版本化索引，支持 STAGING/ACTIVE/FAILED）")
+                .collectionSchema(schema)
+                .numShards(MilvusConstants.DEFAULT_SHARD_NUMBER)
+                .build());
+
+        // 稠密向量索引 — IVF_FLAT + L2
+        var denseIndex = IndexParam.builder()
+                .fieldName(MilvusConstants.DENSE_FIELD)
+                .indexType(IndexParam.IndexType.IVF_FLAT)
+                .metricType(IndexParam.MetricType.L2)
+                .extraParams(Map.of("nlist", 128))
+                .build();
+        client.createIndex(CreateIndexReq.builder()
+                .collectionName(name)
+                .indexParams(List.of(denseIndex))
+                .build());
+        log.info("papers_v2 Dense 索引创建完成: field={}, type=IVF_FLAT", MilvusConstants.DENSE_FIELD);
+
+        // 稀疏向量索引 — SPARSE_INVERTED_INDEX + BM25
+        var sparseIndex = IndexParam.builder()
+                .fieldName(MilvusConstants.SPARSE_FIELD)
+                .indexType(IndexParam.IndexType.SPARSE_INVERTED_INDEX)
+                .metricType(IndexParam.MetricType.BM25)
+                .extraParams(Map.of("inverted_index_algo", "DAAT_MAXSCORE"))
+                .build();
+        client.createIndex(CreateIndexReq.builder()
+                .collectionName(name)
+                .indexParams(List.of(sparseIndex))
+                .build());
+        log.info("papers_v2 Sparse 索引创建完成: field={}, type=SPARSE_INVERTED_INDEX", MilvusConstants.SPARSE_FIELD);
+
+        log.info("papers_v2 Collection 创建完成: {}", name);
     }
 }

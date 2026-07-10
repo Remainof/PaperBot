@@ -15,6 +15,7 @@ import org.example.constant.MilvusConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -28,15 +29,15 @@ public class VectorSearchService {
     @Autowired private MilvusClientV2 client;
     @Autowired private VectorEmbeddingService embeddingService;
 
+    /** 搜索使用 v2 还是旧版 collection */
+    @Value("${indexing.mode:sync}")
+    private String indexingMode;
+
     /**
      * Hybrid Search：同时用稠密向量（语义）+ 稀疏向量（BM25 关键词）搜索，
      * 通过 WeightedRanker 融合结果。
      * <p>
-     * 搜索流程：
-     * 1. 生成稠密向量 (text-embedding-v4 → List&lt;Float&gt;)
-     * 2. 生成稀疏向量 (BM25 token hash → Map&lt;Long,Float&gt;)
-     * 3. 在 Milvus 中同时跑 dense search + sparse search
-     * 4. 用 WeightedRanker 按权重融合
+     * 异步模式下会查询 papers_v2 并过滤 index_status=ACTIVE。
      */
     public List<SearchResult> searchSimilarDocuments(String query, int topK) {
         var queryDense = embeddingService.generateEmbedding(query);
@@ -45,24 +46,29 @@ public class VectorSearchService {
         log.debug("Hybrid Search: query=\"{}\", denseDim={}, sparseTokens={}, topK={}",
                 truncate(query, 50), queryDense.size(), querySparse.size(), topK);
 
-        // 1. 稠密向量搜索
+        var expr = useV2() ? "index_status == \"ACTIVE\"" : "";
+
         var denseReq = AnnSearchReq.builder()
                 .vectorFieldName(MilvusConstants.DENSE_FIELD)
                 .vectors(List.of((BaseVector) new FloatVec(queryDense)))
                 .metricType(IndexParam.MetricType.L2)
                 .params("{\"nprobe\":10}")
+                .expr(expr)
                 .build();
 
-        // 2. 稀疏向量搜索（BM25）
         var sparseReq = AnnSearchReq.builder()
                 .vectorFieldName(MilvusConstants.SPARSE_FIELD)
                 .vectors(List.of((BaseVector) new SparseFloatVec(new TreeMap<>(querySparse))))
                 .metricType(IndexParam.MetricType.BM25)
+                .expr(expr)
                 .build();
 
-        // 3. 混合搜索 + WeightedRanker 融合
+        var collectionName = useV2()
+                ? MilvusConstants.MILVUS_COLLECTION_NAME_V2
+                : MilvusConstants.MILVUS_COLLECTION_NAME;
+
         var hybridReq = HybridSearchReq.builder()
-                .collectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
+                .collectionName(collectionName)
                 .searchRequests(List.of(denseReq, sparseReq))
                 .outFields(List.of("id", "content", "metadata"))
                 .limit(topK)
@@ -89,9 +95,13 @@ public class VectorSearchService {
             }
         }
 
-        log.info("Hybrid Search 完成: query=\"{}\", topK={}, 命中={}",
-                truncate(query, 50), topK, results.size());
+        log.info("Hybrid Search 完成: query=\"{}\", topK={}, 命中={}, collection={}",
+                truncate(query, 50), topK, results.size(), collectionName);
         return results;
+    }
+
+    private boolean useV2() {
+        return "async".equalsIgnoreCase(indexingMode);
     }
 
     private static String truncate(String s, int max) {

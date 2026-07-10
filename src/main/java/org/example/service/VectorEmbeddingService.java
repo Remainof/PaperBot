@@ -5,6 +5,7 @@ import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.alibaba.dashscope.utils.Constants;
 import jakarta.annotation.PostConstruct;
+import org.example.config.EmbeddingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,7 +47,7 @@ public class VectorEmbeddingService {
             var result = textEmbedding.call(param);
             return toFloats(result);
         } catch (Exception e) {
-            throw new RuntimeException("Embedding 失败", e);
+            throw new EmbeddingException("文本向量化失败", e);
         }
     }
 
@@ -57,10 +58,10 @@ public class VectorEmbeddingService {
         try {
             var result = textEmbedding.call(param);
             var output = result.getOutput();
-            if (output == null || output.getEmbeddings() == null) throw new RuntimeException("API 返回空结果");
+            if (output == null || output.getEmbeddings() == null) throw new EmbeddingException("API 返回空结果");
             return output.getEmbeddings().stream().map(e -> toFloats(e.getEmbedding())).toList();
         } catch (Exception e) {
-            throw new RuntimeException("批量 Embedding 失败", e);
+            throw new EmbeddingException("批量文本向量化失败", e);
         }
     }
 
@@ -81,7 +82,7 @@ public class VectorEmbeddingService {
     private List<Float> toFloats(TextEmbeddingResult result) {
         var output = result.getOutput();
         if (output == null || output.getEmbeddings() == null || output.getEmbeddings().isEmpty())
-            throw new RuntimeException("API 返回空结果");
+            throw new EmbeddingException("API 返回空结果");
         return toFloats(output.getEmbeddings().get(0).getEmbedding());
     }
 

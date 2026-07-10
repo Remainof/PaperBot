@@ -2,8 +2,18 @@ package org.example.constant;
 
 public class MilvusConstants {
 
+    // ===== 当前 Collection（旧版，保持兼容） =====
     public static final String MILVUS_DB_NAME = "default";
     public static final String MILVUS_COLLECTION_NAME = "papers";
+
+    // ===== 新版 Collection（版本化，Kafka 异步索引） =====
+    /** 新版 Collection 名称（含版本化字段） */
+    public static final String MILVUS_COLLECTION_NAME_V2 = "papers_v2";
+
+    /** 索引状态：STAGING（写入中）/ ACTIVE（已发布）/ FAILED（失败） */
+    public static final String INDEX_STATUS_STAGING = "STAGING";
+    public static final String INDEX_STATUS_ACTIVE = "ACTIVE";
+    public static final String INDEX_STATUS_FAILED = "FAILED";
 
     public static final int VECTOR_DIM = 1024;
     public static final int ID_MAX_LENGTH = 256;

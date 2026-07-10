@@ -38,6 +38,9 @@ public class PaperParseService {
             var text = stripper.getText(doc);
             log.info("PDF 提取完成: {} ({} 字符)", pdfPath, text.length());
             return text;
+        } catch (IOException e) {
+            log.error("PDF 提取失败 (可能文件损坏或加密): {}", pdfPath);
+            throw new IOException("无法解析 PDF 文件，请确认文件未损坏或未加密", e);
         }
     }
 
@@ -50,7 +53,7 @@ public class PaperParseService {
             if (info.getTitle() != null && !info.getTitle().isBlank()) meta.setTitle(info.getTitle().trim());
             if (info.getAuthor() != null && !info.getAuthor().isBlank()) meta.setAuthors(info.getAuthor().trim());
         } catch (IOException e) {
-            log.warn("读取 PDF 属性失败: {}", e.getMessage());
+            log.warn("读取 PDF 属性失败（不影响主流程）: {}", e.getMessage());
         }
 
         // 标题/作者为空时从首页文字猜测
@@ -68,58 +71,81 @@ public class PaperParseService {
 
     private String guessTitle(String text) {
         if (text == null || text.isBlank()) return null;
-        var firstPage = text.substring(0, Math.min(2000, text.length())).replaceAll("\\s+", " ").trim();
-        var title = new StringBuilder();
-        for (var line : firstPage.split("\\n")) {
-            var t = line.trim();
-            if (t.length() < 10 || t.matches("^\\d+$") || t.toLowerCase().startsWith("abstract")) {
-                if (!title.isEmpty()) break; else continue;
+        try {
+            var firstPage = text.substring(0, Math.min(2000, text.length())).replaceAll("\\s+", " ").trim();
+            var title = new StringBuilder();
+            for (var line : firstPage.split("\\n")) {
+                var t = line.trim();
+                if (t.length() < 10 || t.matches("^\\d+$") || t.toLowerCase().startsWith("abstract")) {
+                    if (!title.isEmpty()) break; else continue;
+                }
+                if (!title.isEmpty()) {
+                    if (t.toLowerCase().startsWith("abstract") || t.matches("^\\d+\\.\\s+.*") ||
+                        t.toLowerCase().startsWith("introduction") || t.toLowerCase().startsWith("1 ")) break;
+                    title.append(" ");
+                }
+                title.append(t);
+                if (title.length() > 20 && t.endsWith(".")) break;
+                if (title.toString().split("\\s+").length > 25) break;
             }
-            if (!title.isEmpty()) {
-                if (t.toLowerCase().startsWith("abstract") || t.matches("^\\d+\\.\\s+.*") ||
-                    t.toLowerCase().startsWith("introduction") || t.toLowerCase().startsWith("1 ")) break;
-                title.append(" ");
-            }
-            title.append(t);
-            if (title.length() > 20 && t.endsWith(".")) break;
-            if (title.toString().split("\\s+").length > 25) break;
+            var s = title.toString().trim();
+            return s.length() >= 10 ? s : null;
+        } catch (Exception e) {
+            log.warn("从首页猜测标题失败: {}", e.getMessage());
+            return null;
         }
-        var s = title.toString().trim();
-        return s.length() >= 10 ? s : null;
     }
 
     private String guessAuthors(String text) {
         if (text == null || text.isBlank()) return null;
-        for (var line : text.substring(0, Math.min(3000, text.length())).split("\\n")) {
-            var t = line.trim();
-            if (t.length() > 200) continue;
-            if (t.matches(".*[a-z]{2,},.*[A-Z][a-z]+.*") || t.contains(" and ") || t.contains(" & ") ||
-                (t.contains(",") && t.matches(".*[A-Z]\\.\\s*[A-Z][a-z]+.*")))
-                return t.replaceAll("[*†‡§¶#]", "").trim();
+        try {
+            for (var line : text.substring(0, Math.min(3000, text.length())).split("\\n")) {
+                var t = line.trim();
+                if (t.length() > 200) continue;
+                if (t.matches(".*[a-z]{2,},.*[A-Z][a-z]+.*") || t.contains(" and ") || t.contains(" & ") ||
+                    (t.contains(",") && t.matches(".*[A-Z]\\.\\s*[A-Z][a-z]+.*")))
+                    return t.replaceAll("[*†‡§¶#]", "").trim();
+            }
+        } catch (Exception e) {
+            log.warn("从首页猜测作者失败: {}", e.getMessage());
         }
         return null;
     }
 
     private String extractAbstract(String text) {
         if (text == null || text.isBlank()) return null;
-        var m = ABSTRACT.matcher(text);
-        if (m.find()) { var a = m.group(1).trim().replaceAll("\\s+", " ").trim(); if (a.length() > 50) return a; }
-        int i = text.toLowerCase().indexOf("abstract");
-        if (i >= 0) return text.substring(i + 8, Math.min(i + 2008, text.length())).replaceAll("\\s+", " ").trim();
+        try {
+            var m = ABSTRACT.matcher(text);
+            if (m.find()) { var a = m.group(1).trim().replaceAll("\\s+", " ").trim(); if (a.length() > 50) return a; }
+            int i = text.toLowerCase().indexOf("abstract");
+            if (i >= 0) return text.substring(i + 8, Math.min(i + 2008, text.length())).replaceAll("\\s+", " ").trim();
+        } catch (Exception e) {
+            log.warn("提取摘要失败: {}", e.getMessage());
+        }
         return null;
     }
 
     private Integer extractYear(String text) {
         if (text == null || text.isBlank()) return null;
-        var m = YEAR.matcher(text.substring(0, Math.min(4000, text.length())));
-        Integer earliest = null;
-        while (m.find()) { int y = Integer.parseInt(m.group()); if (y >= 1950 && y <= 2026 && (earliest == null || y < earliest)) earliest = y; }
-        return earliest;
+        try {
+            var m = YEAR.matcher(text.substring(0, Math.min(4000, text.length())));
+            Integer earliest = null;
+            while (m.find()) { int y = Integer.parseInt(m.group()); if (y >= 1950 && y <= 2026 && (earliest == null || y < earliest)) earliest = y; }
+            return earliest;
+        } catch (Exception e) {
+            log.warn("提取年份失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String extractKeywords(String text) {
         if (text == null || text.isBlank()) return null;
-        var m = KEYWORDS.matcher(text);
-        return m.find() ? m.group(1).trim().replaceAll("\\s+", " ").replaceAll("\\n", "; ") : null;
+        try {
+            var m = KEYWORDS.matcher(text);
+            return m.find() ? m.group(1).trim().replaceAll("\\s+", " ").replaceAll("\\n", "; ") : null;
+        } catch (Exception e) {
+            log.warn("提取关键词失败: {}", e.getMessage());
+            return null;
+        }
     }
 }

@@ -46,7 +46,7 @@ public class ChatController {
             return ResponseEntity.ok(ApiResponse.ok(Map.of("answer", answer)));
         } catch (Exception e) {
             log.error("对话失败", e);
-            return ResponseEntity.ok(ApiResponse.fail(e.getMessage()));
+            return ResponseEntity.ok(ApiResponse.fail(e.getMessage() != null ? e.getMessage() : "AI 回答服务暂时不可用"));
         }
     }
 
@@ -74,21 +74,28 @@ public class ChatController {
 
                     @Override public void onComplete(String full, String _reasoning) {
                         session.add(req.getQuestion(), full);
+                        // 正常结束
                         send(emitter, SseMessage.done());
                         emitter.complete();
                     }
 
                     @Override public void onError(Exception e) {
                         log.error("流式问答异常", e);
-                        sendError(emitter, e.getMessage());
-                        emitter.completeWithError(e);
+                        // 如果已经输出了一些内容，发送错误消息后优雅结束
+                        if (buf.length() > 0) {
+                            send(emitter, SseMessage.error("AI 回答中断，请重试"));
+                            send(emitter, SseMessage.done());
+                            try { emitter.complete(); } catch (Exception ignored) {}
+                        } else {
+                            sendError(emitter, e.getMessage() != null ? e.getMessage() : "AI 回答服务暂时不可用");
+                        }
                     }
 
                     @Override public void onSearchResults(List<VectorSearchService.SearchResult> _results) {}
                     @Override public void onReasoningChunk(String _chunk) {}
                 });
             } catch (Exception e) {
-                sendError(emitter, e.getMessage());
+                sendError(emitter, e.getMessage() != null ? e.getMessage() : "AI 回答服务暂时不可用");
                 emitter.completeWithError(e);
             }
         });
@@ -124,12 +131,17 @@ public class ChatController {
 
     private void send(SseEmitter em, Object data) {
         try { em.send(SseEmitter.event().name("message").data(data, MediaType.APPLICATION_JSON)); }
-        catch (IOException e) { throw new RuntimeException(e); }
+        catch (IOException e) { /* emitter 已关闭，忽略 */ }
     }
 
     private void sendError(SseEmitter em, String msg) {
-        try { em.send(SseEmitter.event().name("message").data(SseMessage.error(msg), MediaType.APPLICATION_JSON)); em.complete(); }
-        catch (IOException _e) { em.completeWithError(new RuntimeException(msg)); }
+        var errorMsg = SseMessage.error(msg);
+        try {
+            em.send(SseEmitter.event().name("message").data(errorMsg, MediaType.APPLICATION_JSON));
+            em.complete();
+        } catch (IOException _e) {
+            em.completeWithError(new RuntimeException(msg));
+        }
     }
 
     // ====================== 会话 ======================

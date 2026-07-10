@@ -6,20 +6,11 @@ server:
       enabled: true
       force: true
 
-file:
-  upload:
-    path: ./papers
-    allowed-extensions: pdf,txt,md
-
-milvus:
-  host: localhost
-  port: 19530
-  username: ""
-  password: ""
-  database: default
-  timeout: 10000
-
 spring:
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:your-api-key-here}
@@ -32,6 +23,27 @@ spring:
           initial-interval: 2000
           multiplier: 2
           max-interval: 10000
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:paperbot}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 3000
+
+file:
+  upload:
+    path: ./papers
+    allowed-extensions: pdf,txt,md
+
+milvus:
+  host: localhost
+  port: 19530
+  username: ""
+  password: ""
+  database: default
+  timeout: 10000
 
 dashscope:
   api:
@@ -48,6 +60,32 @@ rag:
   top-k: 5
   model: "qwen3-max"
   reranker-enabled: true
+
+# ── Kafka 配置 ────────────────────────────────────────
+messaging:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    topics:
+      index-requested: paper.index.requested
+      embedding: paper.index.embedding
+      completed: paper.index.completed
+      dlq: paper.index.dlq
+
+# ── 异步索引配置 ──────────────────────────────────────
+indexing:
+  mode: sync                            # sync（同步，当前模式）/ async（异步，Kafka 模式）
+  workers: 4                             # embedding worker 线程数
+  queue-capacity: 500                    # 队列容量
+  rate-limit:
+    requests-per-minute: 120             # 每分钟最多 API 请求数
+    tokens-per-minute: 200000            # 每分钟最多 token 数
+  embedding:
+    batch-size: 10                       # 每批最多 chunk 数
+    max-tokens-per-batch: 24000          # 每批最多 token 数
+    max-in-flight-requests: 4            # 同时最多进行中的 API 请求数
+    max-retries: 5                       # 单条消息最大重试次数
+  milvus:
+    insert-batch-size: 100               # 每批写入 Milvus 的行数
 
 # ── LightRAG 集成配置 ─────────────────────────────────
 # lightrag.enabled=true 时，上传也会同步建图，问答走 LightRAG 图搜索
